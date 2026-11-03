@@ -1,0 +1,865 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configuration Space for Four-Bar Linkage</title>
+<style>
+  :root{
+    font-family:Arial,Helvetica,sans-serif;
+    color:#202124;
+    background:#f5f6f8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-width:320px}
+  .app-shell{max-width:1180px;margin:0 auto;padding:24px}
+  h1{margin:0 0 8px;font-size:clamp(1.5rem,3vw,2.2rem);font-weight:600}
+  .intro{margin:0 0 22px;max-width:900px;line-height:1.5;color:#4b5563}
+  .controls{
+    display:grid;
+    grid-template-columns:minmax(250px,.75fr) minmax(420px,1.25fr);
+    gap:18px;padding:16px;background:#fff;border:1px solid #dadce0;
+    border-radius:10px;margin-bottom:20px
+  }
+  .control-label,.control-group label{font-size:.96rem}
+  .slider-row{display:flex;align-items:center;gap:12px;margin-top:10px}
+  .slider-row input{flex:1}
+  output{min-width:3.5rem;text-align:right;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%}
+
+  .partition-controls{margin-top:10px}
+  .interval-slider{
+    position:relative;height:42px;margin:2px 8px 0;touch-action:none;user-select:none
+  }
+  .interval-track{
+    position:absolute;left:0;right:0;top:18px;height:6px;border-radius:999px;background:#d9dde3
+  }
+  .interval-fill{
+    position:absolute;top:0;height:100%;border-radius:999px;background:#7b8798
+  }
+  .interval-handle{
+    position:absolute;top:8px;width:24px;height:24px;transform:translateX(-50%);
+    border-radius:50%;border:2px solid #fff;background:#4f6f9f;
+    box-shadow:0 0 0 1px #374151,0 2px 5px rgba(0,0,0,.18);
+    cursor:ew-resize;padding:0
+  }
+  .interval-handle:focus-visible{outline:3px solid rgba(59,130,246,.35);outline-offset:3px}
+  .interval-scale{display:flex;justify-content:space-between;color:#6b7280;font-size:.76rem}
+  .interval-value{text-align:center;color:#5f6368;font-size:.82rem;font-variant-numeric:tabular-nums}
+  .length-readout{
+    display:flex;flex-wrap:wrap;gap:10px 18px;margin-top:9px;
+    font-size:.88rem;font-variant-numeric:tabular-nums
+  }
+  .fixed-total{color:#6b7280}
+
+  .visuals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+  .panel{margin:0;padding:12px;background:#fff;border:1px solid #dadce0;border-radius:10px}
+  .panel figcaption{text-align:center;font-size:1rem;margin:2px 0 10px;font-weight:600}
+  canvas{
+    display:block;width:100%;height:auto;aspect-ratio:1;border:1px solid #eceff1;background:#fff
+  }
+  #configCanvas{cursor:crosshair;touch-action:none}
+  .angle-readout,.status{
+    min-height:1.4em;margin-top:8px;text-align:center;font-size:.9rem;font-variant-numeric:tabular-nums
+  }
+  .status.error{color:#c62828;font-weight:600}
+  .status.single{color:#c62828;font-weight:600}
+  .status.singular{color:#8a5a00;font-weight:600}
+  .math-notes{
+    margin-top:20px;padding:12px 14px;background:#fff;border:1px solid #dadce0;border-radius:10px
+  }
+  .math-notes p{line-height:1.5;color:#4b5563;margin:.5rem 0}
+  @media(max-width:820px){.controls,.visuals{grid-template-columns:1fr}}
+  @media(max-width:560px){.app-shell{padding:12px}}
+</style>
+</head>
+<body>
+<main class="app-shell">
+  <header>
+    <h1>Configuration Space for Four-Bar Linkage</h1>
+    <p class="intro">
+      Drag the red locator on the configuration-space plot. It snaps to the nearest physically
+      reachable pair of joint angles <i>(θ, φ)</i>, and the linkage drawing updates to match.
+    </p>
+  </header>
+
+  <section class="controls" aria-label="Linkage controls">
+    <div class="control-group">
+      <label for="spacing">separation (<i>L</i><sub>4</sub>)</label>
+      <div class="slider-row">
+        <input id="spacing" type="range" min="0" max="1.5" step="0.05" value="0.75">
+        <output id="spacingValue" for="spacing">0.75</output>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <div class="control-label">link lengths (<i>L</i><sub>1</sub>, <i>L</i><sub>2</sub>, <i>L</i><sub>3</sub>)</div>
+      <div class="partition-controls">
+        <div id="partitionSlider" class="interval-slider" role="group"
+             aria-label="Two-handle interval slider for the moving-link lengths">
+          <div class="interval-track"><div id="intervalFill" class="interval-fill"></div></div>
+          <button id="handle1" class="interval-handle" type="button" aria-label="First partition point"></button>
+          <button id="handle2" class="interval-handle" type="button" aria-label="Second partition point"></button>
+        </div>
+        <div class="interval-scale"><span>0</span><span>2.49</span></div>
+        <div class="interval-value">partition points: <b id="partitionReadout">1.35 – 2.00</b></div>
+        <input id="cut1" type="hidden" value="1.35">
+        <input id="cut2" type="hidden" value="2.00">
+      </div>
+      <div class="length-readout" aria-live="polite">
+        <span><i>L</i><sub>1</sub> = <b id="l1Value">1.35</b></span>
+        <span><i>L</i><sub>2</sub> = <b id="l2Value">0.65</b></span>
+        <span><i>L</i><sub>3</sub> = <b id="l3Value">0.50</b></span>
+        <span class="fixed-total">(<i>L</i><sub>1</sub>+<i>L</i><sub>2</sub>+<i>L</i><sub>3</sub> = 2.50)</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="visuals">
+    <figure class="panel">
+      <figcaption>configuration space</figcaption>
+      <canvas id="configCanvas" width="600" height="600" aria-label="Configuration-space plot"></canvas>
+      <div class="angle-readout">θ = <span id="thetaValue">—</span>, φ = <span id="phiValue">—</span></div>
+    </figure>
+
+    <figure class="panel">
+      <figcaption>four-bar linkage</figcaption>
+      <canvas id="linkageCanvas" width="600" height="600" aria-label="Four-bar linkage drawing"></canvas>
+      <div id="status" class="status" aria-live="polite"></div>
+      <div id="closureReadout" class="status" aria-live="polite"></div>
+    </figure>
+  </section>
+
+  <details class="math-notes">
+    <summary>How the web version computes the mechanism</summary>
+    <p>
+      For each θ, the endpoint of <i>L</i><sub>1</sub> is computed first. The shared joint between
+      <i>L</i><sub>2</sub> and <i>L</i><sub>3</sub> is then found from the exact intersection of
+      two circles: one of radius <i>L</i><sub>2</sub> about that endpoint and one of radius
+      <i>L</i><sub>3</sub> about the right ground pivot. φ is obtained directly from that physical
+      joint with atan2.
+    </p>
+  </details>
+</main>
+
+<script>
+"use strict";
+
+const PI = Math.PI;
+const TOTAL_MOVING_LENGTH = 2.5;
+const MIN_INTERVAL = 0.10;
+const PLOT_SAMPLES = 5000;
+const EPS = 1e-10;
+const GEOM_TOL = 1e-9;
+
+const configCanvas = document.getElementById("configCanvas");
+const configCtx = configCanvas.getContext("2d");
+const linkageCanvas = document.getElementById("linkageCanvas");
+const linkageCtx = linkageCanvas.getContext("2d");
+
+const spacingInput = document.getElementById("spacing");
+const spacingValue = document.getElementById("spacingValue");
+const cut1Input = document.getElementById("cut1");
+const cut2Input = document.getElementById("cut2");
+const l1Value = document.getElementById("l1Value");
+const l2Value = document.getElementById("l2Value");
+const l3Value = document.getElementById("l3Value");
+const thetaValue = document.getElementById("thetaValue");
+const phiValue = document.getElementById("phiValue");
+const statusEl = document.getElementById("status");
+const closureReadout = document.getElementById("closureReadout");
+
+const partitionSlider = document.getElementById("partitionSlider");
+const intervalFill = document.getElementById("intervalFill");
+const handle1 = document.getElementById("handle1");
+const handle2 = document.getElementById("handle2");
+const partitionReadout = document.getElementById("partitionReadout");
+
+const DEFAULT_SELECTED = {theta:-0.8877458382200738, phi:-0.9960977669686768};
+
+let requestedPoint = {...DEFAULT_SELECTED};
+let selectedPoint = {...DEFAULT_SELECTED};
+let branchSamples = [];
+let continuumThetas = [];
+let dragActive = false;
+let activePartitionHandle = null;
+let firstBuild = true;
+
+function mod2pi(angle){
+  let x = Math.atan2(Math.sin(angle), Math.cos(angle));
+  if(Math.abs(x + PI) < 1e-12) x = PI;
+  return x;
+}
+
+function currentLengths(){
+  const c1 = Number(cut1Input.value);
+  const c2 = Number(cut2Input.value);
+  return [c1, c2-c1, TOTAL_MOVING_LENGTH-c2, Number(spacingInput.value)];
+}
+
+function isClose(a,b,tol=GEOM_TOL){ return Math.abs(a-b) <= tol; }
+
+function linkageState(lengths){
+  const [l1,l2,l3,l4] = lengths;
+  const vals = [l1,l2,l3,l4];
+  const sums = [l2+l3+l4, l1+l3+l4, l1+l2+l4, l1+l2+l3];
+
+  for(let i=0;i<4;i++){
+    if(vals[i] > sums[i] + GEOM_TOL){
+      return {impossible:true, single:false, point:{theta:PI/2,phi:PI/2}, longest:i};
+    }
+  }
+
+  // A true single (theta,phi) point requires both angle-defining grounded links
+  // to have nonzero length. If L1=0, theta is physically arbitrary; if L3=0,
+  // phi is arbitrary. In those reduced-link cases the physicalSolutions() sweep
+  // correctly produces a line or continuum in configuration space instead.
+  const anglesWellDefined = l1 > GEOM_TOL && l3 > GEOM_TOL;
+
+  if(anglesWellDefined && isClose(l1,sums[0])) return {impossible:false,single:true,point:{theta:0,phi:0},longest:0};
+  if(anglesWellDefined && isClose(l2,sums[1])) return {impossible:false,single:true,point:{theta:PI,phi:0},longest:1};
+  if(anglesWellDefined && isClose(l3,sums[2])) return {impossible:false,single:true,point:{theta:PI,phi:PI},longest:2};
+  if(anglesWellDefined && isClose(l4,sums[3])) return {impossible:false,single:true,point:{theta:0,phi:PI},longest:3};
+
+  return {impossible:false,single:false,point:null,longest:null};
+}
+
+/*
+  Exact physical circle-intersection solver.
+
+  B is the endpoint of L1.
+  D is the right ground pivot.
+  C must lie on:
+      |C-B| = L2
+      |C-D| = L3
+  Each circle intersection is a valid assembly mode.
+*/
+function physicalSolutions(theta,lengths){
+  const [l1,l2,l3,l4] = lengths;
+  const B = [l1*Math.cos(theta), l1*Math.sin(theta)];
+  const D = [l4,0];
+
+  const dx = D[0]-B[0];
+  const dy = D[1]-B[1];
+  const d = Math.hypot(dx,dy);
+
+  // Coincident circles: infinitely many possible C points / phi values.
+  if(d <= GEOM_TOL && Math.abs(l2-l3) <= GEOM_TOL){
+    return {solutions:[], continuum:true, B, D};
+  }
+
+  if(d <= GEOM_TOL) return {solutions:[], continuum:false, B, D};
+
+  if(d > l2+l3+GEOM_TOL) return {solutions:[], continuum:false, B, D};
+  if(d < Math.abs(l2-l3)-GEOM_TOL) return {solutions:[], continuum:false, B, D};
+
+  const a = (l2*l2 - l3*l3 + d*d)/(2*d);
+  let h2 = l2*l2 - a*a;
+
+  if(h2 < 0 && h2 > -1e-9) h2 = 0;
+  if(h2 < 0) return {solutions:[], continuum:false, B, D};
+
+  const h = Math.sqrt(h2);
+  const ux = dx/d;
+  const uy = dy/d;
+  const px = B[0] + a*ux;
+  const py = B[1] + a*uy;
+
+  const ox = -uy*h;
+  const oy = ux*h;
+
+  const C1 = [px+ox, py+oy];
+  const C2 = [px-ox, py-oy];
+
+  function make(C){
+    return {
+      C,
+      phi:mod2pi(Math.atan2(C[1]-D[1], C[0]-D[0]))
+    };
+  }
+
+  const s1 = make(C1);
+  if(h <= GEOM_TOL) return {solutions:[s1], continuum:false, B, D};
+
+  const s2 = make(C2);
+  return {solutions:[s1,s2], continuum:false, B, D};
+}
+
+function controlsAreDefault(){
+  return Math.abs(Number(spacingInput.value)-0.75)<1e-12 &&
+         Math.abs(Number(cut1Input.value)-1.35)<1e-12 &&
+         Math.abs(Number(cut2Input.value)-2.00)<1e-12;
+}
+
+function rebuildSamples(){
+  const lengths = currentLengths();
+  const state = linkageState(lengths);
+  branchSamples = [];
+  continuumThetas = [];
+
+  if(state.impossible){
+    selectedPoint = {...state.point};
+    firstBuild = false;
+    return state;
+  }
+
+  if(state.single){
+    selectedPoint = {...state.point};
+    requestedPoint = {...state.point};
+    firstBuild = false;
+    return state;
+  }
+
+  for(let i=0;i<=PLOT_SAMPLES;i++){
+    const theta = -PI + (2*PI*i)/PLOT_SAMPLES;
+    const result = physicalSolutions(theta,lengths);
+
+    if(result.continuum){
+      continuumThetas.push(theta);
+      branchSamples.push({theta, a:null, b:null, continuum:true});
+      continue;
+    }
+
+    const sols = result.solutions;
+    if(sols.length===0){
+      branchSamples.push({theta,a:null,b:null,continuum:false});
+    }else if(sols.length===1){
+      branchSamples.push({theta,a:sols[0].phi,b:sols[0].phi,continuum:false});
+    }else{
+      // Stable geometric branch assignment from the two circle intersections.
+      branchSamples.push({theta,a:sols[0].phi,b:sols[1].phi,continuum:false});
+    }
+  }
+
+  if(firstBuild && controlsAreDefault()){
+    selectedPoint = {...DEFAULT_SELECTED};
+    requestedPoint = {...DEFAULT_SELECTED};
+  }else{
+    selectedPoint = nearestConfiguration(requestedPoint);
+  }
+  firstBuild = false;
+  return state;
+}
+
+function planeDistance2(a,b){
+  const dt = a.theta-b.theta;
+  const dp = a.phi-b.phi;
+  return dt*dt+dp*dp;
+}
+
+function nearestConfiguration(rawPoint){
+  const point = {theta:mod2pi(rawPoint.theta), phi:mod2pi(rawPoint.phi)};
+  const lengths = currentLengths();
+
+  const candidates = [];
+
+  for(const s of branchSamples){
+    if(s.continuum){
+      candidates.push({theta:s.theta,phi:point.phi,kind:"continuum",seedPhi:point.phi,
+                       d:(s.theta-point.theta)*(s.theta-point.theta)});
+      continue;
+    }
+    if(s.a!==null){
+      candidates.push({theta:s.theta,phi:s.a,kind:"finite",seedPhi:s.a,
+                       d:planeDistance2(point,{theta:s.theta,phi:s.a})});
+    }
+    if(s.b!==null && Math.abs(s.b-s.a)>1e-12){
+      candidates.push({theta:s.theta,phi:s.b,kind:"finite",seedPhi:s.b,
+                       d:planeDistance2(point,{theta:s.theta,phi:s.b})});
+    }
+  }
+
+  if(!candidates.length) return {theta:PI/2,phi:PI/2};
+
+  candidates.sort((x,y)=>x.d-y.d);
+
+  const h = 2*PI/PLOT_SAMPLES;
+  const seeds = [];
+  for(const c of candidates){
+    const distinct = seeds.every(s =>
+      s.kind!==c.kind ||
+      Math.abs(s.theta-c.theta)>3*h ||
+      Math.abs(s.seedPhi-c.seedPhi)>0.20
+    );
+    if(distinct){
+      seeds.push(c);
+      if(seeds.length>=10) break;
+    }
+  }
+
+  let best = {theta:candidates[0].theta,phi:candidates[0].phi,d:candidates[0].d};
+
+  for(const seed of seeds){
+    if(seed.kind==="continuum"){
+      if(seed.d < best.d) best={theta:seed.theta,phi:point.phi,d:seed.d};
+      continue;
+    }
+
+    let center = seed.theta;
+    let radius = 3.5*h;
+    let localBest = {theta:seed.theta,phi:seed.phi,d:seed.d};
+
+    for(let iter=0;iter<18;iter++){
+      let iterBest = localBest;
+
+      for(let k=-5;k<=5;k++){
+        const theta = Math.max(-PI,Math.min(PI,center + radius*k/5));
+        const r = physicalSolutions(theta,lengths);
+
+        if(r.continuum){
+          const d=(theta-point.theta)*(theta-point.theta);
+          if(d<iterBest.d) iterBest={theta,phi:point.phi,d};
+          continue;
+        }
+
+        for(const sol of r.solutions){
+          // Keep refinement on the same displayed branch segment; do not jump
+          // across a +/-pi wrap just because the physical angle is periodic.
+          if(Math.abs(sol.phi-seed.seedPhi)>PI/2) continue;
+          const d = planeDistance2(point,{theta,phi:sol.phi});
+          if(d<iterBest.d) iterBest={theta,phi:sol.phi,d};
+        }
+      }
+
+      localBest=iterBest;
+      center=localBest.theta;
+      radius*=0.38;
+    }
+
+    if(localBest.d<best.d) best=localBest;
+  }
+
+  return {theta:best.theta,phi:mod2pi(best.phi)};
+}
+
+function snapStep(v){ return Math.round(v/0.05)*0.05; }
+
+function enforcePartition(){
+  const max=2.49;
+  let c1=snapStep(Number(cut1Input.value));
+  let c2=snapStep(Number(cut2Input.value));
+  c1=Math.max(0,Math.min(c1,max-MIN_INTERVAL));
+  c2=Math.max(MIN_INTERVAL,Math.min(c2,max));
+  if(c2-c1<MIN_INTERVAL-EPS) c2=Math.min(max,c1+MIN_INTERVAL);
+  if(c2-c1<MIN_INTERVAL-EPS) c1=Math.max(0,c2-MIN_INTERVAL);
+  cut1Input.value=c1.toFixed(2);
+  cut2Input.value=c2.toFixed(2);
+}
+
+function updateIntervalSliderUI(){
+  const max=2.49;
+  const c1=Number(cut1Input.value), c2=Number(cut2Input.value);
+  const p1=100*c1/max, p2=100*c2/max;
+  handle1.style.left=`${p1}%`;
+  handle2.style.left=`${p2}%`;
+  intervalFill.style.left=`${p1}%`;
+  intervalFill.style.width=`${p2-p1}%`;
+  partitionReadout.textContent=`${c1.toFixed(2)} – ${c2.toFixed(2)}`;
+
+  handle1.setAttribute("aria-valuemin","0");
+  handle1.setAttribute("aria-valuemax",(c2-MIN_INTERVAL).toFixed(2));
+  handle1.setAttribute("aria-valuenow",c1.toFixed(2));
+  handle2.setAttribute("aria-valuemin",(c1+MIN_INTERVAL).toFixed(2));
+  handle2.setAttribute("aria-valuemax",max.toFixed(2));
+  handle2.setAttribute("aria-valuenow",c2.toFixed(2));
+}
+
+function setPartition(which,rawValue){
+  const max=2.49;
+  let c1=Number(cut1Input.value), c2=Number(cut2Input.value);
+  let value=Math.max(0,Math.min(max,snapStep(rawValue)));
+
+  if(which===1){
+    c1=value;
+    if(c1>c2-MIN_INTERVAL){
+      c2=c1+MIN_INTERVAL;
+      if(c2>max){c2=max;c1=c2-MIN_INTERVAL;}
+    }
+  }else{
+    c2=value;
+    if(c2<c1+MIN_INTERVAL){
+      c1=c2-MIN_INTERVAL;
+      if(c1<0){c1=0;c2=MIN_INTERVAL;}
+    }
+  }
+
+  cut1Input.value=c1.toFixed(2);
+  cut2Input.value=c2.toFixed(2);
+  enforcePartition();
+  updateIntervalSliderUI();
+  updateAll(true);
+}
+
+function plotToCanvas(theta,phi){
+  const pad=56, w=configCanvas.width-2*pad, h=configCanvas.height-2*pad;
+  return {
+    x:pad+((theta+PI)/(2*PI))*w,
+    y:pad+((PI-phi)/(2*PI))*h
+  };
+}
+
+function canvasToPlot(clientX,clientY){
+  const rect=configCanvas.getBoundingClientRect();
+  const sx=configCanvas.width/rect.width, sy=configCanvas.height/rect.height;
+  const x=(clientX-rect.left)*sx, y=(clientY-rect.top)*sy;
+  const pad=56, w=configCanvas.width-2*pad, h=configCanvas.height-2*pad;
+  const theta=-PI+((x-pad)/w)*2*PI;
+  const phi=PI-((y-pad)/h)*2*PI;
+  return {
+    theta:Math.max(-PI,Math.min(PI,theta)),
+    phi:Math.max(-PI,Math.min(PI,phi))
+  };
+}
+
+function drawAxes(){
+  const ctx=configCtx,pad=56,right=configCanvas.width-pad,bottom=configCanvas.height-pad;
+  const center=plotToCanvas(0,0);
+  ctx.save();
+
+  ctx.strokeStyle="#222";ctx.lineWidth=1.4;
+  ctx.beginPath();ctx.rect(pad,pad,right-pad,bottom-pad);ctx.stroke();
+
+  ctx.strokeStyle="#b8bcc2";ctx.lineWidth=1;
+  ctx.beginPath();
+  ctx.moveTo(center.x,pad);ctx.lineTo(center.x,bottom);
+  ctx.moveTo(pad,center.y);ctx.lineTo(right,center.y);
+  ctx.stroke();
+
+  const ticks=[[-PI,"−π"],[-PI/2,"−π/2"],[0,"0"],[PI/2,"π/2"],[PI,"π"]];
+  ctx.font="15px Arial";ctx.fillStyle="#444";
+  for(const [v,label] of ticks){
+    const px=plotToCanvas(v,0).x,py=plotToCanvas(0,v).y;
+    ctx.textAlign="center";ctx.fillText(label,px,bottom+23);
+    ctx.textAlign="right";ctx.fillText(label,pad-9,py+5);
+  }
+  ctx.font="20px Arial";ctx.fillStyle="#222";
+  ctx.textAlign="center";ctx.fillText("θ",configCanvas.width-30,center.y-10);
+  ctx.textAlign="left";ctx.fillText("φ",center.x+9,29);
+  ctx.restore();
+}
+
+function drawBranch(key,color){
+  const ctx=configCtx;
+  ctx.save();
+  ctx.strokeStyle=color;ctx.lineCap="round";ctx.lineJoin="round";
+
+  let prev=null;
+  for(const s of branchSamples){
+    const phi=s[key];
+    if(s.continuum || phi===null){prev=null;continue;}
+    const p={theta:s.theta,phi};
+    const c=plotToCanvas(p.theta,p.phi);
+
+    if(prev){
+      const jump=Math.abs(p.phi-prev.point.phi);
+      ctx.beginPath();
+      if(jump>PI){
+        ctx.setLineDash([7,6]);ctx.lineWidth=2;
+      }else{
+        ctx.setLineDash([]);ctx.lineWidth=4;
+      }
+      ctx.moveTo(prev.canvas.x,prev.canvas.y);
+      ctx.lineTo(c.x,c.y);
+      ctx.stroke();
+    }
+    prev={point:p,canvas:c};
+  }
+  ctx.restore();
+}
+
+function drawContinuumLines(){
+  if(!continuumThetas.length) return;
+  const ctx=configCtx,pad=56,bottom=configCanvas.height-pad,right=configCanvas.width-pad;
+  ctx.save();
+
+  // If coincident-circle geometry occurs for essentially every theta (for example
+  // L1=L4=0 and L2=L3), the whole (theta,phi) square is reachable. Show that as a
+  // lightly shaded region instead of drawing thousands of vertical dashed lines.
+  if(continuumThetas.length > PLOT_SAMPLES*0.8){
+    ctx.fillStyle="rgba(123,31,162,0.09)";
+    ctx.fillRect(pad,pad,right-pad,bottom-pad);
+    ctx.fillStyle="#7b1fa2";
+    ctx.font="17px Arial";
+    ctx.textAlign="center";
+    ctx.fillText("continuum of configurations",configCanvas.width/2,pad+28);
+  }else{
+    ctx.strokeStyle="#7b1fa2";
+    ctx.lineWidth=2;
+    ctx.setLineDash([6,5]);
+    for(const theta of continuumThetas){
+      const x=plotToCanvas(theta,0).x;
+      ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,bottom);ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function drawConfigPlot(state){
+  configCtx.clearRect(0,0,configCanvas.width,configCanvas.height);
+  drawAxes();
+
+  if(state.impossible){
+    configCtx.save();
+    configCtx.fillStyle="#c62828";configCtx.font="22px Arial";configCtx.textAlign="center";
+    configCtx.fillText("invalid link lengths",configCanvas.width/2,205);
+    configCtx.fillText("no configuration possible",configCanvas.width/2,232);
+    configCtx.restore();
+    return;
+  }
+
+  if(state.single){
+    configCtx.save();
+    configCtx.fillStyle="#c62828";configCtx.font="21px Arial";configCtx.textAlign="center";
+    configCtx.fillText("only one configuration possible",configCanvas.width/2,205);
+    configCtx.restore();
+  }else{
+    drawBranch("a","#5b7db1");
+    drawBranch("b","#d99021");
+    drawContinuumLines();
+  }
+
+  const q=plotToCanvas(selectedPoint.theta,selectedPoint.phi);
+  configCtx.save();
+  configCtx.fillStyle="#d32f2f";configCtx.strokeStyle="#fff";configCtx.lineWidth=3;
+  configCtx.beginPath();configCtx.arc(q.x,q.y,8.5,0,2*PI);configCtx.fill();configCtx.stroke();
+  configCtx.restore();
+}
+
+function worldMapper(lengths){
+  const [l1,l2,l3,l4]=lengths;
+  const reach=Math.max(2.5,l1+l2+l3,l4+l3,1.5);
+  const xmin=-reach*0.72, xmax=Math.max(l4+reach*0.72,reach*0.95);
+  const ymin=-reach*0.75, ymax=reach*0.75;
+  const pad=28,width=linkageCanvas.width-2*pad,height=linkageCanvas.height-2*pad;
+  const sx=width/(xmax-xmin),sy=height/(ymax-ymin),scale=Math.min(sx,sy);
+  const usedW=(xmax-xmin)*scale,usedH=(ymax-ymin)*scale;
+  const ox=pad+(width-usedW)/2,oy=pad+(height-usedH)/2;
+  return ([x,y])=>[ox+(x-xmin)*scale,oy+usedH-(y-ymin)*scale];
+}
+
+function line(ctx,map,a,b,stroke,width=4,dash=[]){
+  const A=map(a),B=map(b);
+  ctx.save();ctx.strokeStyle=stroke;ctx.lineWidth=width;ctx.setLineDash(dash);ctx.lineCap="round";
+  ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();ctx.restore();
+}
+
+function circle(ctx,map,c,r,stroke,width=2){
+  const p=map(c),q=map([c[0]+r,c[1]]);
+  ctx.save();ctx.strokeStyle=stroke;ctx.lineWidth=width;
+  ctx.beginPath();ctx.arc(p[0],p[1],Math.abs(q[0]-p[0]),0,2*PI);ctx.stroke();ctx.restore();
+}
+
+function textAt(ctx,map,txt,p,color="#111",size=20){
+  const q=map(p);
+  ctx.save();ctx.fillStyle=color;ctx.font=`${size}px Arial`;ctx.textAlign="center";
+  ctx.fillText(txt,q[0],q[1]);ctx.restore();
+}
+
+function arrow(ctx,map,a,b,color="#111",width=2){
+  const A=map(a),B=map(b);
+  ctx.save();ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=width;
+  ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();
+  const ang=Math.atan2(B[1]-A[1],B[0]-A[0]),len=10;
+  ctx.beginPath();ctx.moveTo(B[0],B[1]);
+  ctx.lineTo(B[0]-len*Math.cos(ang-.45),B[1]-len*Math.sin(ang-.45));
+  ctx.lineTo(B[0]-len*Math.cos(ang+.45),B[1]-len*Math.sin(ang+.45));
+  ctx.closePath();ctx.fill();ctx.restore();
+}
+
+function angleArc(ctx,map,center,r,angle,color){
+  if(Math.abs(angle)<1e-9) return;
+  const steps=40,pts=[];
+  for(let i=0;i<=steps;i++){
+    const t=angle*i/steps;
+    pts.push([center[0]+r*Math.cos(t),center[1]+r*Math.sin(t)]);
+  }
+  ctx.save();ctx.strokeStyle=color;ctx.lineWidth=2;ctx.beginPath();
+  pts.forEach((p,i)=>{
+    const q=map(p);
+    if(i)ctx.lineTo(q[0],q[1]);else ctx.moveTo(q[0],q[1]);
+  });
+  ctx.stroke();ctx.restore();
+  arrow(ctx,map,pts[steps-1],pts[steps],color,2);
+}
+
+function joint(ctx,map,p){
+  const q=map(p);
+  ctx.save();ctx.fillStyle="#fff";ctx.strokeStyle="#222";ctx.lineWidth=2;
+  ctx.beginPath();ctx.arc(q[0],q[1],6,0,2*PI);ctx.fill();ctx.stroke();ctx.restore();
+}
+
+function closureError(lengths,theta,phi){
+  const [l1,l2,l3,l4]=lengths;
+  const B=[l1*Math.cos(theta),l1*Math.sin(theta)];
+  const C=[l4+l3*Math.cos(phi),l3*Math.sin(phi)];
+  return Math.abs(Math.hypot(C[0]-B[0],C[1]-B[1])-l2);
+}
+
+function drawLinkage(state){
+  const ctx=linkageCtx;
+  ctx.clearRect(0,0,linkageCanvas.width,linkageCanvas.height);
+
+  const lengths=currentLengths();
+  const [l1,l2,l3,l4]=lengths;
+  const map=worldMapper(lengths);
+  const A=[0,0],D=[l4,0];
+
+  // Ground.
+  line(ctx,map,[-.2,-.36],[l4+.2,-.36],"#795548",22);
+  line(ctx,map,[0,-.36],A,"#795548",24);
+  line(ctx,map,[l4,-.36],D,"#795548",24);
+  arrow(ctx,map,[0,-.12],[l4,-.12],"#111",1.6);
+  arrow(ctx,map,[l4,-.12],[0,-.12],"#111",1.6);
+  textAt(ctx,map,"L₄",[l4/2,-.23],"#111",18);
+
+  if(state.impossible){
+    joint(ctx,map,A);joint(ctx,map,D);
+    ctx.save();ctx.fillStyle="#c62828";ctx.font="20px Arial";ctx.textAlign="center";
+    ctx.fillText("No physical configuration",linkageCanvas.width/2,85);ctx.restore();
+    return;
+  }
+
+  const theta=selectedPoint.theta,phi=selectedPoint.phi;
+  const B=[l1*Math.cos(theta),l1*Math.sin(theta)];
+  const C=[l4+l3*Math.cos(phi),l3*Math.sin(phi)];
+
+  // Physical bars all use the same exact joint C.
+  line(ctx,map,A,B,"#4a4f55",24);
+  line(ctx,map,B,C,"#c2c5c8",12);
+  line(ctx,map,D,C,"#888d92",19);
+
+  // Construction geometry.
+  circle(ctx,map,A,l1,"#2f64b7",2);
+  circle(ctx,map,B,l2,"#d99021",2);
+  circle(ctx,map,D,l3,"#cc4d4d",2);
+  line(ctx,map,A,B,"#2f64b7",3);
+  line(ctx,map,B,C,"#d99021",3);
+  line(ctx,map,D,C,"#cc4d4d",3);
+
+  const thetaDraw=mod2pi(Math.atan2(B[1]-A[1],B[0]-A[0]));
+  const phiDraw=mod2pi(Math.atan2(C[1]-D[1],C[0]-D[0]));
+  angleArc(ctx,map,A,Math.max(l1/3,.12),thetaDraw,"#2f64b7");
+  angleArc(ctx,map,D,Math.max(l3/3,.12),phiDraw,"#cc4d4d");
+
+  textAt(ctx,map,"θ",[(.1+l1/3)*Math.cos(thetaDraw/2),(.1+l1/3)*Math.sin(thetaDraw/2)],"#2f64b7",19);
+  textAt(ctx,map,"φ",[l4+(.1+l3/3)*Math.cos(phiDraw/2),(.1+l3/3)*Math.sin(phiDraw/2)],"#cc4d4d",19);
+  textAt(ctx,map,"L₁",[(A[0]+B[0])/2,(A[1]+B[1])/2],"#111",18);
+  textAt(ctx,map,"L₂",[(B[0]+C[0])/2,(B[1]+C[1])/2-.05],"#111",18);
+  textAt(ctx,map,"L₃",[(D[0]+C[0])/2,(D[1]+C[1])/2],"#111",18);
+
+  joint(ctx,map,A);joint(ctx,map,B);joint(ctx,map,C);joint(ctx,map,D);
+}
+
+function formatAngle(x){return `${mod2pi(x).toFixed(3)} rad`;}
+
+function refreshReadouts(state){
+  const [l1,l2,l3,l4]=currentLengths();
+  spacingValue.textContent=l4.toFixed(2);
+  l1Value.textContent=l1.toFixed(2);
+  l2Value.textContent=l2.toFixed(2);
+  l3Value.textContent=l3.toFixed(2);
+
+  statusEl.className="status";
+
+  if(state.impossible){
+    thetaValue.textContent="—";phiValue.textContent="—";
+    statusEl.textContent="invalid link lengths — no physical configuration possible";
+    statusEl.classList.add("error");
+    closureReadout.textContent="";
+    return;
+  }
+
+  thetaValue.textContent=formatAngle(selectedPoint.theta);
+  phiValue.textContent=formatAngle(selectedPoint.phi);
+
+  const err=closureError([l1,l2,l3,l4],selectedPoint.theta,selectedPoint.phi);
+  closureReadout.textContent=`closure error: ${err.toExponential(2)}`;
+
+  if(state.single){
+    statusEl.textContent="only one straight/degenerate configuration possible";
+    statusEl.classList.add("single");
+  }else if(continuumThetas.length){
+    statusEl.textContent = continuumThetas.length > PLOT_SAMPLES*0.8
+      ? "singular reduced-link case: every θ and φ is reachable"
+      : "singular case present: a continuum of φ values exists at the dashed purple θ line";
+    statusEl.classList.add("singular");
+  }else{
+    statusEl.textContent="";
+  }
+}
+
+function updateAll(rebuild=true){
+  enforcePartition();
+  updateIntervalSliderUI();
+  const state=rebuild?rebuildSamples():linkageState(currentLengths());
+
+  if(!rebuild && !state.impossible && !state.single){
+    selectedPoint=nearestConfiguration(requestedPoint);
+  }
+
+  drawConfigPlot(state);
+  drawLinkage(state);
+  refreshReadouts(state);
+}
+
+function handlePointer(e){
+  const state=linkageState(currentLengths());
+  if(state.impossible || state.single) return;
+  requestedPoint=canvasToPlot(e.clientX,e.clientY);
+  selectedPoint=nearestConfiguration(requestedPoint);
+  drawConfigPlot(state);drawLinkage(state);refreshReadouts(state);
+}
+
+configCanvas.addEventListener("pointerdown",e=>{
+  dragActive=true;configCanvas.setPointerCapture(e.pointerId);handlePointer(e);
+});
+configCanvas.addEventListener("pointermove",e=>{if(dragActive)handlePointer(e);});
+configCanvas.addEventListener("pointerup",e=>{
+  dragActive=false;
+  if(configCanvas.hasPointerCapture(e.pointerId))configCanvas.releasePointerCapture(e.pointerId);
+});
+configCanvas.addEventListener("pointercancel",()=>dragActive=false);
+
+spacingInput.addEventListener("input",()=>updateAll(true));
+
+function partitionValueFromPointer(clientX){
+  const rect=partitionSlider.getBoundingClientRect();
+  const t=Math.max(0,Math.min(1,(clientX-rect.left)/rect.width));
+  return t*2.49;
+}
+partitionSlider.addEventListener("pointerdown",e=>{
+  const value=partitionValueFromPointer(e.clientX);
+  const c1=Number(cut1Input.value),c2=Number(cut2Input.value);
+  activePartitionHandle=Math.abs(value-c1)<=Math.abs(value-c2)?1:2;
+  partitionSlider.setPointerCapture(e.pointerId);
+  setPartition(activePartitionHandle,value);
+  e.preventDefault();
+});
+partitionSlider.addEventListener("pointermove",e=>{
+  if(activePartitionHandle!==null)setPartition(activePartitionHandle,partitionValueFromPointer(e.clientX));
+});
+partitionSlider.addEventListener("pointerup",e=>{
+  activePartitionHandle=null;
+  if(partitionSlider.hasPointerCapture(e.pointerId))partitionSlider.releasePointerCapture(e.pointerId);
+});
+partitionSlider.addEventListener("pointercancel",()=>activePartitionHandle=null);
+
+function handleKey(which,e){
+  if(!["ArrowLeft","ArrowRight","Home","End"].includes(e.key))return;
+  e.preventDefault();
+  const current=which===1?Number(cut1Input.value):Number(cut2Input.value);
+  let next=current;
+  if(e.key==="ArrowLeft")next-=.05;
+  if(e.key==="ArrowRight")next+=.05;
+  if(e.key==="Home")next=0;
+  if(e.key==="End")next=2.49;
+  setPartition(which,next);
+}
+handle1.addEventListener("keydown",e=>handleKey(1,e));
+handle2.addEventListener("keydown",e=>handleKey(2,e));
+
+updateIntervalSliderUI();
+updateAll(true);
+</script>
+</body>
+</html>
